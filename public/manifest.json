@@ -1,0 +1,39 @@
+{
+  "name": "Dušan Stil — Dashboard",
+  "short_name": "DS Dashboard",
+  "description": "Dnevno praćenje prodaje i konverzije u 4 radnje Dušan Stil brenda.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#9C7F4F",
+  "lang": "sr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Unos smene",
+      "short_name": "Unos",
+      "url": "/unos",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Tim rang",
+      "short_name": "Rang",
+      "url": "/tim-rang",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

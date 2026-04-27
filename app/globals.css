@@ -1,0 +1,75 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --page-bg: #FFFFFF;
+  --page-bg-soft: #FAFAFA;
+  --ink-900: #0A0A0A;
+  --ink-500: #525252;
+  --ink-200: #E5E5E5;
+  --ink-100: #F2F2F2;
+}
+
+html, body {
+  background: var(--page-bg);
+  color: var(--ink-900);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-ink-100 rounded-2xl p-5 shadow-card;
+  }
+  .card-soft {
+    @apply bg-white border border-ink-100 rounded-2xl p-6 shadow-soft;
+  }
+  .kpi-label {
+    @apply text-xs uppercase tracking-wider text-ink-500 font-semibold;
+  }
+  .kpi-value {
+    @apply text-3xl font-bold text-ink-900 mt-1 tabular-nums;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl font-semibold transition;
+  }
+  .btn-primary {
+    @apply btn bg-ink-900 text-white hover:bg-ink-700 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply btn bg-ink-50 text-ink-900 hover:bg-ink-100 border border-ink-100;
+  }
+  .input {
+    @apply w-full h-12 px-4 rounded-xl border border-ink-200 bg-white text-ink-900
+           focus:outline-none focus:ring-2 focus:ring-ink-900 focus:border-ink-900
+           placeholder:text-ink-400 tabular-nums;
+  }
+  .select {
+    @apply input appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23525252' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-position: right 14px center;
+  }
+  .label {
+    @apply block text-sm font-semibold text-ink-700 mb-1.5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+  .chip-success { @apply chip bg-emerald-50 text-emerald-700; }
+  .chip-warning { @apply chip bg-rose-50 text-rose-700; }
+  .chip-neutral { @apply chip bg-ink-100 text-ink-700; }
+}
+
+/* Tabular nums everywhere for numbers */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Grid helper for dashboard */
+.dash-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
