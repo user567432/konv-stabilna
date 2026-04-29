@@ -3,36 +3,84 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Camera, AlertTriangle, Keyboard } from "lucide-react";
 
-interface Html5QrcodeInstance {
+// ---------------- Tipovi html5-qrcode biblioteke (delimicni) ----------------
+
+type StartConfig = {
+  fps: number;
+  qrbox: { width: number; height: number } | number;
+  aspectRatio?: number;
+  disableFlip?: boolean;
+  experimentalFeatures?: { useBarCodeDetectorIfSupported?: boolean };
+};
+
+type CtorConfig = {
+  formatsToSupport?: number[];
+  verbose?: boolean;
+};
+
+type ScannerInstance = {
   start: (
     cameraIdOrConfig: string | { facingMode: string },
-    configuration: { fps: number; qrbox: { width: number; height: number } },
+    configuration: StartConfig,
     qrCodeSuccessCallback: (decodedText: string) => void,
     qrCodeErrorCallback?: (errorMessage: string) => void
   ) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
-  // 1=NOT_STARTED 2=SCANNING 3=PAUSED — postoji samo u nekim verzijama
   getState?: () => number;
-}
+};
 
-interface Html5QrcodeLib {
-  Html5Qrcode: new (elementId: string) => Html5QrcodeInstance;
-}
+type Html5QrcodeCtor = new (
+  elementId: string,
+  config?: CtorConfig | boolean
+) => ScannerInstance;
 
 declare global {
   interface Window {
-    Html5Qrcode?: Html5QrcodeLib["Html5Qrcode"];
+    Html5Qrcode?: Html5QrcodeCtor;
   }
 }
 
-interface Props {
-  onClose: () => void;
-  onScan: (barkod: string) => void;
+// ---------------- Format kodovi ----------------
+
+const FMT_EAN_13 = 9;
+const FMT_EAN_8 = 10;
+const FMT_UPC_A = 14;
+const FMT_UPC_E = 15;
+const FMT_CODE_128 = 5;
+const FMT_CODE_39 = 3;
+const FMT_ITF = 8;
+
+const RETAIL_FORMATS: number[] = [
+  FMT_EAN_13,
+  FMT_EAN_8,
+  FMT_UPC_A,
+  FMT_UPC_E,
+  FMT_CODE_128,
+  FMT_CODE_39,
+  FMT_ITF,
+];
+
+// ---------------- Helpers ----------------
+
+function isValidEanOrUpc(code: string): boolean {
+  if (!/^\d+$/.test(code)) return true;
+  const len = code.length;
+  if (len !== 8 && len !== 12 && len !== 13 && len !== 14) return true;
+  const digits = code.split("").map((d) => parseInt(d, 10));
+  const check = digits.pop() as number;
+  let sum = 0;
+  digits.reverse().forEach((d, i) => {
+    sum += i % 2 === 0 ? d * 3 : d;
+  });
+  const calc = (10 - (sum % 10)) % 10;
+  return calc === check;
 }
 
-async function loadHtml5Qrcode(): Promise<void> {
-  if (typeof window !== "undefined" && window.Html5Qrcode) return;
+function loadHtml5Qrcode(): Promise<void> {
+  if (typeof window !== "undefined" && window.Html5Qrcode) {
+    return Promise.resolve();
+  }
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(
       'script[data-lib="html5-qrcode"]'
@@ -55,16 +103,10 @@ async function loadHtml5Qrcode(): Promise<void> {
   });
 }
 
-/**
- * Bezbedan stop — html5-qrcode `stop()` baca sinhrono ako skener nije pokrenut.
- * Pokušaj kao Promise, hvataj i sinhrone i async greške.
- */
-async function safeStop(scanner: Html5QrcodeInstance): Promise<void> {
+async function safeStop(scanner: ScannerInstance): Promise<void> {
   try {
-    // Ako biblioteka ima getState, ne zovi stop ako već nije scanning
     if (typeof scanner.getState === "function") {
       const st = scanner.getState();
-      // 2 = SCANNING. U svim drugim stanjima stop puca.
       if (st !== 2) return;
     }
     const p = scanner.stop();
@@ -72,11 +114,11 @@ async function safeStop(scanner: Html5QrcodeInstance): Promise<void> {
       await p.catch(() => undefined);
     }
   } catch {
-    // ignore — skener je već stopiran ili u nepoznatom stanju
+    // ignore
   }
 }
 
-function safeClear(scanner: Html5QrcodeInstance) {
+function safeClear(scanner: ScannerInstance): void {
   try {
     scanner.clear();
   } catch {
@@ -84,58 +126,91 @@ function safeClear(scanner: Html5QrcodeInstance) {
   }
 }
 
-/**
- * BarcodeScanner — modal koji otvara kameru i čita barkod (EAN/Code128).
- * Fallback: dugme „Ukucaj ručno" koje otvara input + Enter.
- */
-export default function BarcodeScanner({ onClose, onScan }: Props) {
-  const [stage, setStage] = useState<
-    "loading" | "scanning" | "manual" | "error"
-  >("loading");
+// ---------------- Component ----------------
+
+type Props = {
+  onClose: () => void;
+  onScan: (barkod: string) => void;
+};
+
+type Stage = "loading" | "scanning" | "manual" | "error";
+
+export default function BarcodeScanner(props: Props) {
+  const { onClose, onScan } = props;
+  const [stage, setStage] = useState<Stage>("loading");
   const [err, setErr] = useState<string | null>(null);
   const [manual, setManual] = useState("");
-  const scannerRef = useRef<Html5QrcodeInstance | null>(null);
+
+  const scannerRef = useRef<ScannerInstance | null>(null);
   const scannedRef = useRef(false);
+  const lastReadCodeRef = useRef<string>("");
+  const lastReadCountRef = useRef<number>(0);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    const startScanner = async (): Promise<void> => {
       try {
         await loadHtml5Qrcode();
         if (cancelled) return;
-        const Html5Qrcode = window.Html5Qrcode;
-        if (!Html5Qrcode) throw new Error("Biblioteka nije dostupna.");
+        const Ctor = window.Html5Qrcode;
+        if (!Ctor) throw new Error("Biblioteka nije dostupna.");
 
-        // Uveri se da je div u DOM-u
         await new Promise((r) => setTimeout(r, 50));
         if (cancelled) return;
 
-        const scanner = new Html5Qrcode("barcode-reader");
+        const scanner: ScannerInstance = new Ctor("barcode-reader", {
+          formatsToSupport: RETAIL_FORMATS,
+          verbose: false,
+        });
         scannerRef.current = scanner;
+
+        const cfg: StartConfig = {
+          fps: 12,
+          qrbox: { width: 280, height: 140 },
+          aspectRatio: 1.7777778,
+          disableFlip: true,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
+        };
+
+        const onSuccess = (decoded: string): void => {
+          if (scannedRef.current || cancelled) return;
+          if (!isValidEanOrUpc(decoded)) return;
+
+          if (lastReadCodeRef.current === decoded) {
+            lastReadCountRef.current += 1;
+          } else {
+            lastReadCodeRef.current = decoded;
+            lastReadCountRef.current = 1;
+            return;
+          }
+          if (lastReadCountRef.current < 2) return;
+
+          scannedRef.current = true;
+          queueMicrotask(() => {
+            safeStop(scanner).then(() => {
+              if (!cancelled) {
+                try {
+                  onScan(decoded);
+                } catch {
+                  // parent ce nas demontirati
+                }
+              }
+            });
+          });
+        };
+
+        const onError = (): void => {
+          // per-frame greske se ignorisu
+        };
 
         await scanner.start(
           { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 250, height: 120 } },
-          (decoded) => {
-            if (scannedRef.current || cancelled) return;
-            scannedRef.current = true;
-            // Sve dalje radimo asinhrono da ne bi prekinuli html5-qrcode petlju
-            // dok smo još u njenom callback-u — to je ono što pravi "Application error".
-            queueMicrotask(() => {
-              safeStop(scanner).finally(() => {
-                if (!cancelled) {
-                  try {
-                    onScan(decoded);
-                  } catch {
-                    // parent nas raspakuje, sve OK
-                  }
-                }
-              });
-            });
-          },
-          () => {
-            // Per-frame greške ne treba prikazivati
-          }
+          cfg,
+          onSuccess,
+          onError
         );
         if (!cancelled) setStage("scanning");
       } catch (e: unknown) {
@@ -147,27 +222,31 @@ export default function BarcodeScanner({ onClose, onScan }: Props) {
         );
         setStage("manual");
       }
-    })();
+    };
+
+    void startScanner();
 
     return () => {
       cancelled = true;
       const sc = scannerRef.current;
       scannerRef.current = null;
       if (sc) {
-        // safeStop je async, ali ne moramo ga čekati u cleanup-u
-        safeStop(sc).finally(() => safeClear(sc));
+        safeStop(sc).then(
+          () => safeClear(sc),
+          () => safeClear(sc)
+        );
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [onScan]);
 
-  function submitManual(e: React.FormEvent) {
+  const submitManual = (e: React.FormEvent): void => {
     e.preventDefault();
-    if (manual.trim() && !scannedRef.current) {
+    const v = manual.trim();
+    if (v && !scannedRef.current) {
       scannedRef.current = true;
-      onScan(manual.trim());
+      onScan(v);
     }
-  }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-ink-900/80 flex items-center justify-center p-4">
