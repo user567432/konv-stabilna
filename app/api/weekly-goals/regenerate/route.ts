@@ -26,9 +26,8 @@ export async function POST(req: Request) {
 
   const supabase = createSupabaseServer();
 
-  // Parse month as a local date (YYYY-MM-01)
   const [y, m] = body.month.split("-").map(Number);
-  const anyDateInMonth = new Date(y, m - 1, 15); // sredina meseca
+  const anyDateInMonth = new Date(y, m - 1, 15);
 
   const slices = distributeMonthlyGoal(
     body.store_id,
@@ -36,67 +35,45 @@ export async function POST(req: Request) {
     anyDateInMonth
   );
 
-  // Prvo pronađi postojeće nedelje iz istog izvornog meseca — sačuvaj one koje su ručno prepisane
+  // Prvo procitaj postojece da znamo koje su rucno prepisane
   const sourceMonth = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-01`;
   const { data: existing } = await supabase
     .from("weekly_goals")
-    .select("*")
+    .select("week_start, manual_override")
     .eq("store_id", body.store_id)
     .eq("source_month", sourceMonth);
 
-  const existingMap = new Map<string, { id: string; manual_override: boolean }>();
+  const manualSet = new Set<string>();
   (existing ?? []).forEach((r) => {
-    existingMap.set(r.week_start, {
-      id: r.id as string,
-      manual_override: Boolean(r.manual_override),
-    });
+    if (r.manual_override) manualSet.add(r.week_start as string);
   });
 
   let preserved = 0;
-  let created = 0;
-  let updated = 0;
+  let processed = 0;
 
   for (const slice of slices) {
-    const ex = existingMap.get(slice.week_start);
-    if (ex?.manual_override) {
+    if (manualSet.has(slice.week_start)) {
       preserved += 1;
-      continue; // ne diraj ručno podešeno
+      continue;
     }
-    if (ex) {
-      const { error } = await supabase
-        .from("weekly_goals")
-        .update({
-          week_end: slice.week_end,
-          goal_rsd: slice.goal_rsd,
-          source_month: slice.source_month,
-          manual_override: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", ex.id);
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-      updated += 1;
-    } else {
-      const { error } = await supabase.from("weekly_goals").insert({
-        store_id: body.store_id,
-        week_start: slice.week_start,
-        week_end: slice.week_end,
-        goal_rsd: slice.goal_rsd,
-        source_month: slice.source_month,
-        manual_override: false,
-      });
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-      created += 1;
+    // Upsert preko RPC (zaobilazi RLS)
+    const { error } = await supabase.rpc("upsert_weekly_goal", {
+      p_store_id: body.store_id,
+      p_week_start: slice.week_start,
+      p_week_end: slice.week_end,
+      p_goal_rsd: slice.goal_rsd,
+      p_source_month: slice.source_month,
+      p_manual_override: false,
+    });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    processed += 1;
   }
 
   return NextResponse.json({
     ok: true,
-    weeks_created: created,
-    weeks_updated: updated,
+    weeks_created: processed,
     preserved,
     total_weeks: slices.length,
   });

@@ -6,7 +6,8 @@ import { LogOut } from "lucide-react";
 export default function LogoutButton() {
   const router = useRouter();
   async function logout() {
-    await fetch("/api/tim-login", { method: "DELETE" });
+    await fetch("/api/login", { method: "DELETE" });
+    router.push("/login");
     router.refresh();
   }
   return (

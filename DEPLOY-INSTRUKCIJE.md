@@ -54,13 +54,17 @@ Nakon ovoga imaš `.vercel/` folder sa project ID-om — to više ne dirati.
 
 Pokreni svaku komandu zasebno u PowerShell-u (kopiraj-zalepi blokove). Vercel će na svaku reći **„production"** je environment.
 
+> **VAŽNO**: NE upisuj prave vrednosti u ovaj fajl! Vrednosti uzimaš iz svog
+> `.env.local` (koji je u `.gitignore`) ili iz Supabase / Resend dashboard-a.
+> Komande ispod imaju samo placeholder-e — zameni ih svojim ključevima u
+> PowerShell-u, NE u ovom fajlu.
+
 ```powershell
 # --- Supabase ---
-"https://jdbmmlphyoqyzzvsbrjk.supabase.co" | vercel env add NEXT_PUBLIC_SUPABASE_URL production
+"<TVOJ_SUPABASE_URL>"      | vercel env add NEXT_PUBLIC_SUPABASE_URL production
+"<TVOJ_ANON_KEY>"          | vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 
-"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkYm1tbHBoeW9xeXp6dnNicmprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyOTU3NjksImV4cCI6MjA5Mjg3MTc2OX0.d--ty0rPTqiHHrwSBc4IOdG4dZMDbVsHmsb_iHMzSGM" | vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
-
-# --- PIN-ovi ---
+# --- PIN-ovi (default vrednosti — nisu tajne, mogu da ostanu ovde) ---
 "4986" | vercel env add ADMIN_PIN production
 "1205" | vercel env add TIM_PIN_D1 production
 "7501" | vercel env add TIM_PIN_D2 production
@@ -68,8 +72,8 @@ Pokreni svaku komandu zasebno u PowerShell-u (kopiraj-zalepi blokove). Vercel ć
 "1172" | vercel env add TIM_PIN_D5 production
 
 # --- Resend / email ---
-"re_cLdUfeVv_GuFZybzV46jrYdECmgKUZgXk" | vercel env add RESEND_API_KEY production
-"jovanjocic05@gmail.com" | vercel env add NOTIFY_EMAIL production
+"<TVOJ_RESEND_KEY>"        | vercel env add RESEND_API_KEY production
+"<TVOJ_NOTIFY_EMAIL>"      | vercel env add NOTIFY_EMAIL production
 "Dušan Stil <onboarding@resend.dev>" | vercel env add FROM_EMAIL production
 ```
 

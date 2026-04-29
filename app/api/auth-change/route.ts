@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   isMasterAuthed,
-  getAuthConfig,
+  getNotifyEmail,
   invalidateAuthCache,
   ADMIN_COOKIE,
   TIM_COOKIE,
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const cfg = await getAuthConfig();
+    const notifyEmail = await getNotifyEmail();
     const code = generateCode();
     const requestedAt = new Date();
 
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
 
     try {
       await sendEmail({
-        to: cfg.notify_email,
+        to: notifyEmail,
         subject: `Potvrdi promenu ${targetDisplay} šifre · Dušan Stil`,
         html: pinChangeEmailHtml({ code, target, requestedAt }),
         text: `Kod za potvrdu promene ${targetDisplay} šifre: ${code}. Važi 15 minuta.`,
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
       ok: true,
       request_id: created.id,
       expires_at: created.expires_at,
-      notify_email_masked: maskEmail(cfg.notify_email),
+      notify_email_masked: maskEmail(notifyEmail),
     });
   }
 

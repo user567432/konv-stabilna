@@ -32,7 +32,7 @@ interface PutPayload {
   goal_rsd: number;
 }
 
-// PUT /api/weekly-goals — ručno overridovanje jedne nedelje
+// PUT /api/weekly-goals — ručno overridovanje jedne nedelje (preko RPC zbog RLS)
 export async function PUT(req: Request) {
   if (!(await isAdminAuthed())) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -43,20 +43,16 @@ export async function PUT(req: Request) {
   }
 
   const supabase = createSupabaseServer();
-  const { error } = await supabase
-    .from("weekly_goals")
-    .update({
-      goal_rsd: body.goal_rsd,
-      manual_override: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", body.id);
+  const { error } = await supabase.rpc("update_weekly_goal_manual", {
+    p_id: body.id,
+    p_goal_rsd: body.goal_rsd,
+  });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/weekly-goals?id=... — reset na automatski (obriši override)
+// DELETE /api/weekly-goals?id=... — reset na automatski (preko RPC)
 export async function DELETE(req: Request) {
   if (!(await isAdminAuthed())) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -66,10 +62,7 @@ export async function DELETE(req: Request) {
   if (!id) return NextResponse.json({ error: "id required." }, { status: 400 });
 
   const supabase = createSupabaseServer();
-  const { error } = await supabase
-    .from("weekly_goals")
-    .update({ manual_override: false, updated_at: new Date().toISOString() })
-    .eq("id", id);
+  const { error } = await supabase.rpc("reset_weekly_goal_to_auto", { p_id: id });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

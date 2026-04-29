@@ -19,34 +19,18 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Payload;
   const supabase = createSupabaseServer();
 
-  // Upsert by store_id
-  let query = supabase.from("settings").select("id");
-  query = body.store_id
-    ? query.eq("store_id", body.store_id)
-    : query.is("store_id", null);
-  const { data: existing } = await query.maybeSingle();
+  // Idu kroz SECURITY DEFINER RPC zato sto settings tabela ima public_read policy
+  // ali NEMA insert/update za anon — direktno pisanje preko anon klienta tiho pada.
+  const { error } = await supabase.rpc("upsert_store_settings", {
+    p_store_id: body.store_id,
+    p_conversion_target: body.conversion_target,
+    p_aov_target: body.aov_target,
+    p_revenue_target: body.revenue_target ?? null,
+    p_monthly_revenue_target: body.monthly_revenue_target ?? null,
+  });
 
-  if (existing) {
-    const { error } = await supabase
-      .from("settings")
-      .update({
-        conversion_target: body.conversion_target,
-        aov_target: body.aov_target,
-        revenue_target: body.revenue_target ?? null,
-        monthly_revenue_target: body.monthly_revenue_target ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  } else {
-    const { error } = await supabase.from("settings").insert({
-      store_id: body.store_id,
-      conversion_target: body.conversion_target,
-      aov_target: body.aov_target,
-      revenue_target: body.revenue_target ?? null,
-      monthly_revenue_target: body.monthly_revenue_target ?? null,
-    });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

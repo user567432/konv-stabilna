@@ -8,9 +8,11 @@ import { Pencil, RotateCcw, Check, X, AlertCircle } from "lucide-react";
 interface Props {
   storeId: string;
   storeName: string;
+  /** Opciono: YYYY-MM-01 string. Ako se ne prosledi, koristi tekuci mesec. */
+  month?: string;
 }
 
-export default function WeeklyGoalsEditor({ storeId, storeName }: Props) {
+export default function WeeklyGoalsEditor({ storeId, storeName, month }: Props) {
   const [weeks, setWeeks] = useState<WeeklyGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -18,17 +20,18 @@ export default function WeeklyGoalsEditor({ storeId, storeName }: Props) {
   const [editValue, setEditValue] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
-  // Fetchovanje za tekući i sledeći mesec
+  // Fetchovanje za tekući ili prosledjeni mesec
   async function load() {
     setLoading(true);
     setErr(null);
     try {
-      const now = new Date();
-      const currentMonth = `${now.getFullYear()}-${String(
-        now.getMonth() + 1
-      ).padStart(2, "0")}-01`;
+      let monthStr = month;
+      if (!monthStr) {
+        const now = new Date();
+        monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      }
       const res = await fetch(
-        `/api/weekly-goals?store_id=${storeId}&month=${currentMonth}`
+        `/api/weekly-goals?store_id=${storeId}&month=${monthStr}`
       );
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -46,7 +49,7 @@ export default function WeeklyGoalsEditor({ storeId, storeName }: Props) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId]);
+  }, [storeId, month]);
 
   async function saveEdit(id: string) {
     setSaving(true);
@@ -103,7 +106,7 @@ export default function WeeklyGoalsEditor({ storeId, storeName }: Props) {
   return (
     <div className="space-y-2">
       <div className="text-xs font-bold uppercase tracking-wider text-ink-500">
-        Nedeljni ciljevi za {storeName} (tekući mesec)
+        Nedeljni ciljevi za {storeName}
       </div>
 
       {err && (

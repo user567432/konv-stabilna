@@ -130,8 +130,8 @@ export default function DashboardClient({
             <Link href="/admin/istorija" className="btn-ghost !h-9 !px-3 text-sm">
               <History size={16} /> Istorija
             </Link>
-            <Link href="/admin/podesavanja" className="btn-ghost !h-9 !px-3 text-sm">
-              <Settings size={16} /> Podešavanja
+            <Link href="/master" className="btn-ghost !h-9 !px-3 text-sm" title="Master meni (HR, Podešavanja)">
+              <Settings size={16} /> Master meni
             </Link>
             <button onClick={logout} className="btn-ghost !h-9 !px-3 text-sm">
               <LogOut size={16} /> Odjavi se

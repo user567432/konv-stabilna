@@ -6,6 +6,10 @@
     {
       "path": "/api/weather/refresh",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/compute-monthly-bonuses",
+      "schedule": "0 6 1 * *"
     }
   ]
 }
