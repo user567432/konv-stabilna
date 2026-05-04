@@ -11,6 +11,8 @@ import {
   X,
   Save,
   Clock3,
+  Bell,
+  CheckCircle2,
 } from "lucide-react";
 import clsx from "clsx";
 import { STORE_LABELS_SHORT, formatDateSr } from "@/lib/format";
@@ -111,6 +113,48 @@ export default function RasporedClient({
   }, [weekStart, activeStore]);
 
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishMsg, setPublishMsg] = useState<string | null>(null);
+
+  async function publishSchedule() {
+    const storeLabel = STORE_LABELS_SHORT[activeStore] ?? activeStore;
+    const weekLabel = `${formatDateSr(weekStart)} – ${formatDateSr(addDays(weekStart, 6))}`;
+    if (
+      !confirm(
+        `Pošalji obaveštenje svim radnicama u radnji ${storeLabel} da je raspored za ${weekLabel} objavljen?`
+      )
+    ) {
+      return;
+    }
+    setPublishBusy(true);
+    setPublishMsg(null);
+    try {
+      const supabase = createSupabaseBrowser();
+      // weekStart je YYYY-MM-DD string
+      const { data, error } = await supabase.rpc("queue_push_for_schedule", {
+        p_store_id: activeStore,
+        p_week_start: weekStart,
+      });
+      if (error) throw new Error(error.message);
+      const queued = typeof data === "number" ? data : 0;
+      // Pokreni dispatch odmah
+      const dispatchRes = await fetch("/api/push/dispatch", { method: "POST" });
+      const dispatchJson = await dispatchRes.json().catch(() => ({}));
+      const sent = (dispatchJson.sent as number | undefined) ?? 0;
+      setPublishMsg(
+        `Obaveštenje pripremljeno za ${queued} radnica · poslato ${sent} push-eva.`
+      );
+      setTimeout(() => setPublishMsg(null), 6000);
+    } catch (e: unknown) {
+      setSaveError(
+        e instanceof Error
+          ? `Objava raspisa: ${e.message}`
+          : "Objava raspisa nije uspela."
+      );
+    } finally {
+      setPublishBusy(false);
+    }
+  }
 
   const prevSlotsMap = useMemo(() => {
     const m = new Map<string, ScheduleSlot>();
@@ -304,6 +348,37 @@ export default function RasporedClient({
             </button>
           </section>
         )}
+
+        {/* Publish success */}
+        {publishMsg && (
+          <section className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-900 flex items-center gap-2">
+            <CheckCircle2 size={16} className="shrink-0" />
+            <span>{publishMsg}</span>
+          </section>
+        )}
+
+        {/* Publish button */}
+        <section className="card-soft bg-amber-50/40 border-amber-100 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-amber-900 text-sm">
+              Objavi raspored radnicama
+            </h3>
+            <p className="text-xs text-amber-800 mt-0.5">
+              Klikni kad si završila izmene za ovu nedelju i radnju —
+              radnice te radnje koje su uključile push obaveštenja
+              dobijaju zvuk na telefonu i banner sa linkom „Moj raspored".
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={publishSchedule}
+            disabled={publishBusy}
+            className="h-11 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold inline-flex items-center gap-2 shrink-0 disabled:opacity-60"
+          >
+            <Bell size={14} />
+            {publishBusy ? "Šaljem…" : "Objavi & obavesti radnice"}
+          </button>
+        </section>
 
         {/* Week navigation */}
         <section className="card-soft">

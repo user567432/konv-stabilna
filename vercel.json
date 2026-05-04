@@ -12,9 +12,9 @@
       "schedule": "0 6 1 * *"
     },
     {
-      "comment": "Web push dispatcher — pošalje sve pending push notifikacije na svake 2 minute (fallback ako odmah-poziv padne)",
+      "comment": "Web push fallback dispatcher — daily cleanup za neposlate push-ove. Hobby Vercel plan dozvoljava samo daily cron. Pravi push-evi se šalju odmah iz akcija (OdmoriClient itd) ili preko Supabase pg_cron-a (vidi migraciju 019).",
       "path": "/api/push/dispatch",
-      "schedule": "*/2 * * * *"
+      "schedule": "0 4 * * *"
     }
   ]
 }
