@@ -91,6 +91,10 @@ export default function OdmoriClient({ initialRows, activeFilter }: Props) {
         )
       );
       setReviewing(null);
+
+      // Odmah pokreni dispatch da push stigne radnici bez čekanja na cron.
+      // Best-effort — ako ne uspe, cron na svake 2 minute će ga pokupiti.
+      void fetch("/api/push/dispatch", { method: "POST" }).catch(() => null);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Greška.");
     } finally {

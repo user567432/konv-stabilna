@@ -12,6 +12,7 @@ import {
   TriangleAlert,
   CheckSquare,
   Camera,
+  Upload,
 } from "lucide-react";
 import clsx from "clsx";
 import { createSupabaseBrowser } from "@/lib/supabase";
@@ -62,6 +63,7 @@ export default function DocumentEditor({
   const [articles, setArticles] = useState<DocArticleRow[]>(initialArticles);
   const [showAddArticle, setShowAddArticle] = useState(false);
   const [showFromFeleri, setShowFromFeleri] = useState(false);
+  const [showImportTxt, setShowImportTxt] = useState(false);
   const [editingArticle, setEditingArticle] = useState<DocArticleRow | null>(null);
   const [globalErr, setGlobalErr] = useState<string | null>(null);
 
@@ -199,6 +201,14 @@ export default function DocumentEditor({
         >
           <TriangleAlert size={14} /> Iz felera
         </button>
+        <button
+          type="button"
+          onClick={() => setShowImportTxt(true)}
+          title="Uvezi listu artikala iz Logik .txt fajla (barkod;količina)"
+          className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
+        >
+          <Upload size={14} /> Uvezi .txt
+        </button>
       </div>
 
       {grouped.length === 0 ? (
@@ -209,12 +219,12 @@ export default function DocumentEditor({
         grouped.map(([proizvodjac, list]) => (
           <section key={proizvodjac} className="card-soft">
             <div className="flex items-center justify-between mb-3 gap-2">
-              <h3 className="text-xs uppercase tracking-wider font-bold text-ink-500">
-                {proizvodjac} ·{" "}
-                <span className="text-ink-700 normal-case">
-                  {list.length} artikala
-                </span>
-              </h3>
+              <ProizvodjacGroupTitle
+                proizvodjac={proizvodjac}
+                count={list.length}
+                onRenamed={reload}
+                onErr={setGlobalErr}
+              />
               {list.some((r) => !r.cekirano) && (
                 <button
                   type="button"
@@ -358,6 +368,17 @@ export default function DocumentEditor({
           onClose={() => setShowFromFeleri(false)}
           onAdded={() => {
             setShowFromFeleri(false);
+            reload();
+          }}
+        />
+      )}
+
+      {showImportTxt && (
+        <ImportTxtToDocModal
+          documentId={doc.id}
+          onClose={() => setShowImportTxt(false)}
+          onDone={() => {
+            setShowImportTxt(false);
             reload();
           }}
         />
@@ -1099,6 +1120,357 @@ function FromFeleriModal({
           >
             {busy ? "Dodajem…" : `Dodaj ${selected.size} u dokument`}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ProizvodjacGroupTitle — header za grupu artikala po proizvođaču sa olovkom.
+ * Klik na olovku otvori inline input → Enter (ili plavi check) bulk-renameuje
+ * sve artikle koji imaju isto ime proizvođača na novo ime.
+ */
+function ProizvodjacGroupTitle({
+  proizvodjac,
+  count,
+  onRenamed,
+  onErr,
+}: {
+  proizvodjac: string;
+  count: number;
+  onRenamed: () => void;
+  onErr: (msg: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(proizvodjac);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setDraft(proizvodjac), [proizvodjac]);
+
+  async function commit() {
+    const newName = draft.trim();
+    if (!newName || newName === proizvodjac) {
+      setEditing(false);
+      setDraft(proizvodjac);
+      return;
+    }
+    setSaving(true);
+    try {
+      const supabase = createSupabaseBrowser();
+      const oldKey = proizvodjac === "Bez proizvođača" ? "" : proizvodjac;
+      const { error } = await supabase.rpc("bulk_rename_proizvodjac", {
+        p_old: oldKey,
+        p_new: newName,
+      });
+      if (error) throw new Error(error.message);
+      setEditing(false);
+      onRenamed();
+    } catch (e: unknown) {
+      onErr(e instanceof Error ? e.message : "Greška pri preimenovanju.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            else if (e.key === "Escape") {
+              setEditing(false);
+              setDraft(proizvodjac);
+            }
+          }}
+          autoFocus
+          disabled={saving}
+          className="flex-1 min-w-0 h-8 px-2 rounded border-2 border-amber-400 bg-white text-sm font-bold text-ink-900 focus:outline-none focus:ring-2 focus:ring-amber-300"
+        />
+        <button
+          type="button"
+          onClick={commit}
+          disabled={saving}
+          className="text-xs h-8 px-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold disabled:opacity-50"
+        >
+          {saving ? "Snimam…" : "Sačuvaj"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setEditing(false);
+            setDraft(proizvodjac);
+          }}
+          disabled={saving}
+          className="text-xs h-8 px-2.5 rounded-lg hover:bg-ink-100 text-ink-700"
+        >
+          Otkaži
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <h3 className="text-xs uppercase tracking-wider font-bold text-ink-500 flex items-center gap-1.5">
+      <span>{proizvodjac}</span>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        title="Preimenuj proizvođača"
+        className="p-1 rounded hover:bg-ink-100 text-ink-400 hover:text-ink-700"
+      >
+        <Pencil size={11} />
+      </button>
+      <span className="text-ink-300">·</span>
+      <span className="text-ink-700 normal-case font-semibold">{count} artikala</span>
+    </h3>
+  );
+}
+
+/* ============================================================
+   ImportTxtToDocModal — uvozi listu artikala iz Logik .txt fajla
+   direktno u dokument (bulk_add_doc_articles_from_barkods)
+   ============================================================ */
+type DocImportResult = {
+  ok_count: number;
+  fail_count: number;
+  unknown_barkods: string[];
+};
+
+function ImportTxtToDocModal({
+  documentId,
+  onClose,
+  onDone,
+}: {
+  documentId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<
+    Array<{ barkod: string; kolicina: number }>
+  >([]);
+  const [tip, setTip] = useState("Logik TXT import");
+  const [napomena, setNapomena] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<DocImportResult | null>(null);
+
+  async function onFile(f: File | null) {
+    if (!f) return;
+    setFile(f);
+    setErr(null);
+    setResult(null);
+    try {
+      const text = await f.text();
+      const lines = text
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const parsed: Array<{ barkod: string; kolicina: number }> = [];
+      for (const line of lines) {
+        const [barkod, kolStr] = line.split(";").map((p) => p.trim());
+        if (!barkod) continue;
+        const kol = Number((kolStr ?? "1").replace(",", "."));
+        parsed.push({
+          barkod,
+          kolicina: Number.isFinite(kol) && kol > 0 ? kol : 1,
+        });
+      }
+      setPreview(parsed);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Ne mogu da pročitam fajl.");
+    }
+  }
+
+  async function submit() {
+    if (preview.length === 0) {
+      setErr("Fajl je prazan ili nema validnih linija.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const supabase = createSupabaseBrowser();
+      const { data, error } = await supabase
+        .rpc("bulk_add_doc_articles_from_barkods", {
+          p_doc_id: documentId,
+          p_lines: preview,
+          p_tip_ostecenja: tip || "Logik TXT import",
+          p_napomena: napomena.trim() || null,
+        })
+        .single<DocImportResult>();
+      if (error) throw new Error(error.message);
+      setResult(data);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Greška pri importu.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-ink-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onClose();
+      }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between bg-emerald-600 text-white rounded-t-2xl">
+          <h3 className="font-bold inline-flex items-center gap-2">
+            <Upload size={18} /> Uvezi artikle u dokument iz .txt
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="p-1.5 rounded hover:bg-emerald-700/50"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5 space-y-4">
+          <div className="text-xs text-ink-700 leading-relaxed">
+            Format: jedna linija po artiklu,{" "}
+            <code className="bg-ink-100 px-1 rounded">barkod;količina</code>.
+            Npr.{" "}
+            <code className="bg-ink-100 px-1 rounded">2000010037261;1</code>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-ink-500 uppercase block mb-1">
+              Izaberi .txt fajl
+            </label>
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+              disabled={busy}
+              className="text-sm w-full"
+            />
+            {file && (
+              <div className="text-xs text-ink-500 mt-1">
+                {file.name} · {preview.length} linija
+              </div>
+            )}
+          </div>
+
+          {preview.length > 0 && !result && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-ink-500 uppercase block mb-1">
+                    Tip oštećenja
+                  </label>
+                  <input
+                    type="text"
+                    value={tip}
+                    onChange={(e) => setTip(e.target.value)}
+                    disabled={busy}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-ink-500 uppercase block mb-1">
+                    Napomena (opciono)
+                  </label>
+                  <input
+                    type="text"
+                    value={napomena}
+                    onChange={(e) => setNapomena(e.target.value)}
+                    disabled={busy}
+                    className="input"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-ink-200 max-h-64 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-ink-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-bold text-ink-700 uppercase tracking-wider">
+                        Barkod
+                      </th>
+                      <th className="px-3 py-2 text-right font-bold text-ink-700 uppercase tracking-wider w-20">
+                        Količina
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {preview.map((p, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-1.5 font-mono">{p.barkod}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">
+                          {p.kolicina}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {result && (
+            <div className="space-y-2">
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-900">
+                <b>{result.ok_count}</b> artikala uspešno dodato u dokument.
+              </div>
+              {result.fail_count > 0 && (
+                <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-900">
+                  <b>{result.fail_count}</b> linija nije uspelo
+                  {result.unknown_barkods.length > 0 && (
+                    <>
+                      {" "}
+                      — nepoznati barkodovi:
+                      <div className="mt-1.5 max-h-24 overflow-y-auto font-mono text-[11px] bg-white/70 rounded p-2">
+                        {result.unknown_barkods.join(", ")}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {err && (
+            <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-900 flex items-start gap-2">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>{err}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-ink-100 bg-ink-50/40 flex gap-2 justify-end rounded-b-2xl">
+          {result ? (
+            <button type="button" onClick={onDone} className="btn-primary">
+              Zatvori
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+                className="btn-ghost"
+              >
+                Otkaži
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={busy || preview.length === 0}
+                className="btn-primary"
+              >
+                {busy ? "Uvozim…" : `Uvezi ${preview.length} artikala`}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

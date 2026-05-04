@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
@@ -129,6 +129,20 @@ export default function PlateClient({
     });
     return m;
   });
+
+  // Rebuild cellMap kad se salaries prop promeni (npr. korisnik se kreće kroz mesece)
+  useEffect(() => {
+    const m = new Map<string, CellValues>();
+    salaries.forEach((s) => {
+      if (s.year != null && s.month != null) {
+        m.set(periodKey(s.worker_id, s.year, s.month), {
+          fixed: s.fixed_amount ?? 0,
+          variable: s.variable_amount ?? 0,
+        });
+      }
+    });
+    setCellMap(m);
+  }, [salaries]);
 
   const [editing, setEditing] = useState<{
     workerId: string;
@@ -348,15 +362,15 @@ export default function PlateClient({
           </div>
         </section>
 
-        {/* Month navigation */}
+        {/* Month navigation — Noviji LEVO, Stariji DESNO (po zahtevu) */}
         <section className="card-soft">
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={() => shiftMonths(-1)}
+              onClick={() => shiftMonths(1)}
               className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg bg-white border border-ink-200 hover:bg-ink-50 text-sm font-semibold"
             >
-              <ChevronLeft size={16} /> Stariji
+              <ChevronLeft size={16} /> Noviji
             </button>
             <div className="text-center">
               <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500">
@@ -380,10 +394,10 @@ export default function PlateClient({
               )}
               <button
                 type="button"
-                onClick={() => shiftMonths(1)}
+                onClick={() => shiftMonths(-1)}
                 className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg bg-white border border-ink-200 hover:bg-ink-50 text-sm font-semibold"
               >
-                Noviji <ChevronRight size={16} />
+                Stariji <ChevronRight size={16} />
               </button>
             </div>
           </div>

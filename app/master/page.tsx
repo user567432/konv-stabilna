@@ -8,6 +8,8 @@ import {
 } from "@/lib/auth";
 import { Users, LineChart, ArrowRight, Settings as SettingsIcon, FileText, AlertOctagon } from "lucide-react";
 import LogoutButton from "./LogoutButton";
+import MasterBell from "@/components/MasterBell";
+import PushSetup from "@/components/PushSetup";
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +41,15 @@ export default async function MasterLanding() {
               <div className="text-sm font-semibold text-ink-900">MASTER</div>
             </div>
           </div>
-          <LogoutButton />
+          <div className="flex items-center gap-2">
+            <MasterBell />
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
       <div className="max-w-3xl mx-auto px-5 md:px-8 py-10 md:py-14 space-y-8">
+        <PushSetup />
         <section>
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
             Dobrodošli, MASTER

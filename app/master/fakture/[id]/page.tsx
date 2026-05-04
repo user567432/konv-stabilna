@@ -33,6 +33,9 @@ export interface InvoiceArticle {
   kolicina: number;
   usd: number;
   rvel: number;
+  rsd_form: number | null;
+  prod_c: number | null;
+  popust: number | null;
 }
 
 export default async function InvoiceDetailPage({

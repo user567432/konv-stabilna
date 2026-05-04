@@ -5,6 +5,7 @@ import ShiftForm from "./ShiftForm";
 import Link from "next/link";
 import { ArrowLeft, Trophy, Target, TrendingUp } from "lucide-react";
 import LogoutButton from "./LogoutButton";
+import LogikUputstvoFAB from "@/components/LogikUputstvoFAB";
 import { formatRSD, formatPct } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -185,6 +186,7 @@ export default async function UnosPage() {
 
         <ShiftForm stores={stores ?? []} workers={workers ?? []} lockedStoreId={myStore} />
       </div>
+      <LogikUputstvoFAB />
     </main>
   );
 }

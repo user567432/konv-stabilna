@@ -45,11 +45,7 @@ export default async function FelerDocPage({
 
   const supabase = createSupabaseServer();
   const [{ data: doc }, { data: arts }] = await Promise.all([
-    supabase
-      .from("feler_documents")
-      .select("*")
-      .eq("id", params.id)
-      .maybeSingle(),
+    supabase.rpc("get_feler_document", { p_id: params.id }).single<FelerDoc>(),
     supabase.rpc("list_doc_articles", { p_doc_id: params.id }),
   ]);
 

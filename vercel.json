@@ -10,6 +10,11 @@
     {
       "path": "/api/compute-monthly-bonuses",
       "schedule": "0 6 1 * *"
+    },
+    {
+      "comment": "Web push dispatcher — pošalje sve pending push notifikacije na svake 2 minute (fallback ako odmah-poziv padne)",
+      "path": "/api/push/dispatch",
+      "schedule": "*/2 * * * *"
     }
   ]
 }

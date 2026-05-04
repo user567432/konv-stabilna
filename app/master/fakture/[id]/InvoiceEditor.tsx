@@ -34,6 +34,11 @@ interface Rates {
   eurRsd: number;
   popust: number;
   markup: number;
+  /** USD→EUR rate korišćen u EUR Form formuli (npr. 1.16, EUR/USD = 1 EUR košta toliko USD-ova).
+   *  Različit od `usdEur` (koji je obrnuti smer i koristi se za informativni EUR prikaz). */
+  kursDolarEuro: number;
+  /** Multiplikator iz EUR Form u RSD Form (po jedinici). */
+  multiplier: number;
 }
 
 const DEFAULT_RATES: Rates = {
@@ -41,6 +46,8 @@ const DEFAULT_RATES: Rates = {
   eurRsd: 117.5,
   popust: 5,
   markup: 50,
+  kursDolarEuro: 1.16,
+  multiplier: 1,
 };
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -65,11 +72,23 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
     new Map()
   );
 
-  const koeficijent = useMemo(() => {
+  // Override za koeficijent — ako je null, računa se po formuli
+  const [koeficijentOverride, setKoeficijentOverride] = useState<number | null>(
+    () => {
+      const v = (invoice.rates_json as { koeficijentOverride?: number } | null)
+        ?.koeficijentOverride;
+      return typeof v === "number" && v > 0 ? v : null;
+    }
+  );
+
+  const koeficijentComputed = useMemo(() => {
     const popust = rates.popust ?? 0;
     const markup = rates.markup ?? 0;
     return (1 - popust / 100) * rates.usdEur * rates.eurRsd * (1 + markup / 100);
   }, [rates]);
+
+  const koeficijent =
+    koeficijentOverride != null ? koeficijentOverride : koeficijentComputed;
 
   const [filterText, setFilterText] = useState("");
   const [sortBy, setSortBy] = useState<{
@@ -106,6 +125,9 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
           p_kolicina: Number(a.kolicina) || 0,
           p_usd: Number(a.usd) || 0,
           p_rvel: Number(a.rvel) || 0,
+          p_rsd_form: a.rsd_form == null ? null : Number(a.rsd_form),
+          p_prod_c: a.prod_c == null ? null : Number(a.prod_c),
+          p_popust: a.popust == null ? null : Number(a.popust),
         });
       }
     } catch {
@@ -265,12 +287,36 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  // EUR Form po jedinici za artikal: (USD - popust) / kursDolarEuro × (1 + markup/100)
+  // popust dolazi iz a.popust ili iz globalnog rates.popust ako nema na artiklu
+  function computeEurForm(a: InvoiceArticle): number {
+    const u = Number(a.usd) || 0;
+    if (u <= 0) return 0;
+    const popustAbs =
+      a.popust != null
+        ? Number(a.popust)
+        : 0; // Globalni popust nije apsolutni iznos — držimo per-article apsolutni broj.
+    const usdNet = Math.max(0, u - popustAbs);
+    const eurBase = usdNet / (rates.kursDolarEuro || 1);
+    return eurBase * (1 + (rates.markup || 0) / 100);
+  }
+
+  // RSD Form formula = EUR Form × multiplier × eurRsd
+  function computeRsdFormFormula(a: InvoiceArticle): number {
+    return (
+      computeEurForm(a) * (rates.multiplier || 1) * (rates.eurRsd || 1)
+    );
+  }
+
   const totals = useMemo(() => {
     let qty = 0;
     let usdSum = 0;
     let eurSum = 0;
     let rsdOrientSum = 0;
     let rvelSum = 0;
+    let rsdFormSum = 0;
+    let prodCSum = 0;
+    let eurFormSum = 0;
     articles.forEach((a) => {
       const k = Number(a.kolicina) || 0;
       const u = Number(a.usd) || 0;
@@ -280,9 +326,29 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
       eurSum += k * u * rates.usdEur;
       rsdOrientSum += k * u * koeficijent;
       rvelSum += k * r;
+      eurFormSum += k * computeEurForm(a);
+      // RSD Form: ako je popunjeno koristi to, inače formula
+      const rsdF =
+        a.rsd_form != null && Number(a.rsd_form) > 0
+          ? Number(a.rsd_form)
+          : computeRsdFormFormula(a);
+      rsdFormSum += k * rsdF;
+      if (a.prod_c != null && Number(a.prod_c) > 0) {
+        prodCSum += k * Number(a.prod_c);
+      }
     });
-    return { qty, usdSum, eurSum, rsdOrientSum, rvelSum };
-  }, [articles, koeficijent, rates.usdEur]);
+    return {
+      qty,
+      usdSum,
+      eurSum,
+      rsdOrientSum,
+      rvelSum,
+      rsdFormSum,
+      prodCSum,
+      eurFormSum,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articles, koeficijent, rates]);
 
   function setRow(id: string, patch: Partial<InvoiceArticle>) {
     setArticles((arr) =>
@@ -327,6 +393,8 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
         p_kolicina: Number(a.kolicina) || 0,
         p_usd: Number(a.usd) || 0,
         p_rvel: Number(a.rvel) || 0,
+        p_rsd_form: a.rsd_form == null ? null : Number(a.rsd_form),
+        p_prod_c: a.prod_c == null ? null : Number(a.prod_c),
       });
       if (error) throw new Error(error.message);
       setStatus(id, "saved");
@@ -352,13 +420,17 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
     setHeaderStatus("saving");
     try {
       const supabase = createSupabaseBrowser();
+      const ratesPayload: Record<string, unknown> = {
+        ...(rates as unknown as Record<string, unknown>),
+        koeficijentOverride: koeficijentOverride,
+      };
       const { error } = await supabase.rpc("update_invoice", {
         p_id: invoice.id,
         p_custom_name: customName || null,
         p_supplier_name: supplierName || null,
         p_invoice_number: invoiceNumber || null,
         p_invoice_date: invoiceDate || null,
-        p_rates_json: rates as unknown as Record<string, unknown>,
+        p_rates_json: ratesPayload,
       });
       if (error) throw new Error(error.message);
       setHeaderStatus("saved");
@@ -385,6 +457,9 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
           p_kolicina: 0,
           p_usd: 0,
           p_rvel: 0,
+          p_rsd_form: null,
+          p_prod_c: null,
+          p_popust: null,
         })
         .single<InvoiceArticle>();
       if (error) throw new Error(error.message);
@@ -422,7 +497,7 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
   useEffect(() => {
     scheduleHeaderSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rates, customName, supplierName, invoiceNumber, invoiceDate]);
+  }, [rates, customName, supplierName, invoiceNumber, invoiceDate, koeficijentOverride]);
 
   return (
     <div className="space-y-6">
@@ -528,7 +603,7 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
             {ratesBusy ? "Učitavam…" : "Auto kurs (ECB)"}
           </button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           <NumberField
             label="USD/EUR"
             value={rates.usdEur}
@@ -553,18 +628,29 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
             step={1}
             onChange={(v) => setRates((r) => ({ ...r, markup: v }))}
           />
-          <div>
-            <div className="text-[10px] uppercase tracking-wider font-bold text-ink-500">
-              Koeficijent
-            </div>
-            <div className="mt-1.5 text-base font-bold text-amber-900 tabular-nums h-9 flex items-center">
-              {koeficijent.toFixed(3)}
-            </div>
-          </div>
+          <NumberField
+            label="Kurs $→€"
+            value={rates.kursDolarEuro}
+            step={0.01}
+            onChange={(v) => setRates((r) => ({ ...r, kursDolarEuro: v }))}
+          />
+          <NumberField
+            label="Multipl. €→Form"
+            value={rates.multiplier}
+            step={0.05}
+            onChange={(v) => setRates((r) => ({ ...r, multiplier: v }))}
+          />
+          <KoeficijentField
+            override={koeficijentOverride}
+            computed={koeficijentComputed}
+            onChange={setKoeficijentOverride}
+          />
         </div>
         <p className="text-[11px] text-amber-800 mt-2">
           Koeficijent = (1 − popust/100) × USD/EUR × EUR/RSD × (1 + markup/100).
-          USD × koeficijent = orijentaciona RSD vrednost.
+          USD × koeficijent = orijentaciona RSD vrednost. Možeš da prepišeš
+          koeficijent ručno (klikni na olovku) — kada to uradiš, formula se ne
+          primenjuje dok ga opet ne resetuješ.
         </p>
       </section>
 
@@ -666,6 +752,76 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
               if (col && row) setActiveCell({ row, col });
             }
           }}
+          onKeyDown={(e) => {
+            // Strelice — navigacija između ćelija (kao u Excel-u)
+            // Aktivno samo kad je fokus na input-u u ćeliji.
+            const target = e.target as HTMLElement;
+            if (
+              target.tagName !== "INPUT" &&
+              target.tagName !== "TEXTAREA"
+            ) {
+              return;
+            }
+            const td = target.closest("td[data-cell]") as HTMLElement | null;
+            if (!td) return;
+            const col = td.dataset.cellCol ?? "";
+            const row = Number(td.dataset.cellRow ?? "0");
+            if (!col || !row) return;
+
+            const tbody = td.closest("tbody");
+            if (!tbody) return;
+
+            // Selection — ako se kursor pomera unutar input-a (npr. pri editu
+            // teksta) ne presreći. Presreći samo ako je input prazan ili ako
+            // je strelica na "kraju".
+            const inp = target as HTMLInputElement;
+            const atStart = inp.selectionStart === 0;
+            const atEnd =
+              inp.selectionEnd != null && inp.selectionEnd === inp.value.length;
+
+            const allCols = ["B", "C", "D", "E", "F", "I", "J", "K", "L"];
+
+            let nextRow = row;
+            let nextCol = col;
+            let handled = false;
+
+            if (e.key === "ArrowDown" || (e.key === "Enter" && !e.shiftKey)) {
+              nextRow = row + 1;
+              handled = true;
+            } else if (e.key === "ArrowUp" || (e.key === "Enter" && e.shiftKey)) {
+              nextRow = row - 1;
+              handled = true;
+            } else if (e.key === "ArrowRight" && atEnd) {
+              const idx = allCols.indexOf(col);
+              if (idx >= 0 && idx < allCols.length - 1) {
+                nextCol = allCols[idx + 1];
+                handled = true;
+              }
+            } else if (e.key === "ArrowLeft" && atStart) {
+              const idx = allCols.indexOf(col);
+              if (idx > 0) {
+                nextCol = allCols[idx - 1];
+                handled = true;
+              }
+            } else if (e.key === "Tab") {
+              // Tab native focus order već radi — dozvoli mu, ali zabeleži
+              // novi activeCell preko onFocus
+              return;
+            }
+
+            if (!handled) return;
+            e.preventDefault();
+            // Nadji target ćeliju
+            const sel = `td[data-cell-col="${nextCol}"][data-cell-row="${nextRow}"]`;
+            const nextTd = tbody.querySelector(sel) as HTMLElement | null;
+            if (!nextTd) return;
+            const nextInput = nextTd.querySelector("input") as HTMLInputElement | null;
+            if (nextInput) {
+              nextInput.focus();
+              // Selektuj sav tekst — kao Excel
+              setTimeout(() => nextInput.select(), 0);
+            }
+          }}
         >
           <table className="w-full text-sm border-collapse">
             <thead>
@@ -691,9 +847,27 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
                 <SortHeader col="rvel" sortBy={sortBy} toggle={toggleSort} className="w-24 text-right">
                   RVEL
                 </SortHeader>
+                <th
+                  className="px-2 py-2 w-20 text-right bg-orange-50"
+                  title="Popust po komadu (apsolutni iznos u USD koji se oduzima od cene). Ako je prazan, koristi se 0."
+                >
+                  Popust $
+                </th>
                 <SortHeader col="total" sortBy={sortBy} toggle={toggleSort} className="w-24 text-right bg-sky-50">
                   Ukupno USD
                 </SortHeader>
+                <th
+                  className="px-2 py-2 w-24 text-right bg-emerald-100"
+                  title="EUR Form = (USD − popust) ÷ kurs $→€ × (1 + markup/100). Po komadu."
+                >
+                  EUR Form
+                </th>
+                <th className="px-2 py-2 w-24 text-right bg-rose-50" title="RSD Form = EUR Form × multiplikator × kurs €→RSD. Auto-računa, možeš da prepišeš.">
+                  RSD Form
+                </th>
+                <th className="px-2 py-2 w-24 text-right bg-violet-50" title="Prodajna cena — slobodno polje">
+                  Prod C
+                </th>
                 <th className="px-2 py-2 w-8"></th>
                 <th className="px-2 py-2 w-8"></th>
               </tr>
@@ -702,7 +876,7 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
               {filteredArticles.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={12}
+                    colSpan={16}
                     className="py-8 text-center text-ink-400 italic"
                   >
                     {articles.length === 0
@@ -792,8 +966,50 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
                           onBlur={() => saveRow(a.id)}
                         />
                       </td>
+                      <td className="px-1 py-1 bg-orange-50/30" data-cell data-cell-col="J" data-cell-row={i + 2}>
+                        <FormulaCell
+                          value={a.popust}
+                          formulaValue={null}
+                          onChange={(v) => {
+                            setRow(a.id, { popust: v });
+                            scheduleRowSave(a.id);
+                          }}
+                          onBlur={() => saveRow(a.id)}
+                        />
+                      </td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-xs text-sky-800 bg-sky-50/40 font-semibold">
                         {totalUsd > 0 ? `$${totalUsd.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-xs text-emerald-900 bg-emerald-100/40 font-semibold">
+                        {(() => {
+                          const ef = computeEurForm(a);
+                          return ef > 0 ? `€${ef.toFixed(2)}` : "—";
+                        })()}
+                      </td>
+                      <td className="px-1 py-1 bg-rose-50/30" data-cell data-cell-col="K" data-cell-row={i + 2}>
+                        <FormulaCell
+                          value={a.rsd_form}
+                          formulaValue={(() => {
+                            const v = computeRsdFormFormula(a);
+                            return v > 0 ? Math.round(v) : null;
+                          })()}
+                          onChange={(v) => {
+                            setRow(a.id, { rsd_form: v });
+                            scheduleRowSave(a.id);
+                          }}
+                          onBlur={() => saveRow(a.id)}
+                        />
+                      </td>
+                      <td className="px-1 py-1 bg-violet-50/30" data-cell data-cell-col="L" data-cell-row={i + 2}>
+                        <FormulaCell
+                          value={a.prod_c}
+                          formulaValue={null}
+                          onChange={(v) => {
+                            setRow(a.id, { prod_c: v });
+                            scheduleRowSave(a.id);
+                          }}
+                          onBlur={() => saveRow(a.id)}
+                        />
                       </td>
                       <td className="px-1 py-1 text-center">
                         <RowStatus status={status} />
@@ -832,8 +1048,20 @@ export default function InvoiceEditor({ invoice, initialArticles }: Props) {
                   <td className="px-2 py-2 text-right tabular-nums text-ink-900">
                     {Math.round(totals.rvelSum).toLocaleString("sr-RS")}
                   </td>
+                  <td className="px-2 py-2 text-right text-ink-400 text-xs italic">—</td>
                   <td className="px-2 py-2 text-right tabular-nums text-sky-800 bg-sky-50">
                     ${totals.usdSum.toFixed(2)}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums text-emerald-900 bg-emerald-100">
+                    €{totals.eurFormSum.toFixed(2)}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums text-rose-800 bg-rose-50">
+                    {Math.round(totals.rsdFormSum).toLocaleString("sr-RS")}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums text-violet-800 bg-violet-50">
+                    {totals.prodCSum > 0
+                      ? Math.round(totals.prodCSum).toLocaleString("sr-RS")
+                      : "—"}
                   </td>
                   <td colSpan={2}></td>
                 </tr>
@@ -1025,6 +1253,179 @@ function NumCell({
         onBlur();
       }}
       className="w-full h-8 px-2 rounded text-sm text-right tabular-nums bg-transparent focus:bg-sky-50 focus:outline-none focus:ring-1 focus:ring-sky-300"
+    />
+  );
+}
+
+/**
+ * KoeficijentField — prikazuje izračunat koeficijent. Klik na olovku otvori
+ * input gde možeš da prepišeš formula vrednost ručno. Klik na X resetuje na
+ * formulu.
+ */
+function KoeficijentField({
+  override,
+  computed,
+  onChange,
+}: {
+  override: number | null;
+  computed: number;
+  onChange: (v: number | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>(
+    override == null ? "" : String(override)
+  );
+  useEffect(() => {
+    setDraft(override == null ? "" : String(override));
+  }, [override]);
+
+  const isOverridden = override != null;
+
+  function commit() {
+    const safe = draft.replace(",", ".").trim();
+    if (safe === "") {
+      onChange(null);
+    } else {
+      const n = Number(safe);
+      if (Number.isFinite(n) && n > 0) onChange(n);
+    }
+    setEditing(false);
+  }
+
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-bold text-ink-500 flex items-center gap-1">
+        Koeficijent
+        {isOverridden && (
+          <span
+            className="text-[8px] uppercase tracking-wider px-1 py-0.5 rounded bg-rose-100 text-rose-800 font-bold"
+            title="Ručno uneto, ne primenjuje se formula"
+          >
+            ručno
+          </span>
+        )}
+      </div>
+      {editing ? (
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            } else if (e.key === "Escape") {
+              setDraft(override == null ? "" : String(override));
+              setEditing(false);
+            }
+          }}
+          autoFocus
+          placeholder={computed.toFixed(3)}
+          className="mt-1.5 w-full h-9 px-2 rounded text-base font-bold text-amber-900 tabular-nums bg-white border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-ink-400 placeholder:font-normal"
+        />
+      ) : (
+        <div className="mt-1.5 h-9 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className={`text-base font-bold tabular-nums px-2 py-1 rounded hover:bg-amber-100 ${
+              isOverridden ? "text-rose-800" : "text-amber-900"
+            }`}
+            title="Klikni za ručni unos"
+          >
+            {(override ?? computed).toFixed(3)}
+          </button>
+          {isOverridden ? (
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="p-1 rounded hover:bg-rose-100 text-rose-700"
+              title="Resetuj na formulu"
+            >
+              <RefreshCw size={12} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="p-1 rounded hover:bg-amber-100 text-amber-700"
+              title="Ručni unos"
+            >
+              <Pencil size={12} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * FormulaCell — numeričko polje koje prikazuje placeholder izračunat po formuli
+ * kad je vrednost prazna. Ako korisnik upiše broj, čuvamo taj broj. Ako obriše,
+ * vraćamo se na placeholder.
+ *
+ * - value: ono što je uneto (može biti null = nije uneto)
+ * - formulaValue: vrednost izračunata po formuli (npr. USD × koeficijent)
+ *                 prikazuje se sivim italikom kao placeholder kad je value null
+ */
+function FormulaCell({
+  value,
+  formulaValue,
+  onChange,
+  onBlur,
+}: {
+  value: number | null;
+  formulaValue: number | null;
+  onChange: (v: number | null) => void;
+  onBlur: () => void;
+}) {
+  const [draft, setDraft] = useState<string>(value == null ? "" : String(value));
+  useEffect(() => {
+    setDraft(value == null ? "" : String(value));
+  }, [value]);
+
+  const placeholder =
+    formulaValue != null && formulaValue > 0
+      ? Math.round(formulaValue).toLocaleString("sr-RS")
+      : "";
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      placeholder={placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const safe = draft.replace(",", ".").trim();
+        if (safe === "") {
+          // prazno = vrati na null (placeholder se opet vidi)
+          setDraft("");
+          onChange(null);
+          onBlur();
+          return;
+        }
+        let final: number;
+        if (/^[\d.+\-*/() ]+$/.test(safe)) {
+          try {
+            // eslint-disable-next-line no-new-func
+            final = Number(new Function(`return (${safe});`)());
+            if (!Number.isFinite(final) || final < 0) {
+              final = value == null ? 0 : Number(value);
+            }
+          } catch {
+            final = value == null ? 0 : Number(value);
+          }
+        } else {
+          final = value == null ? 0 : Number(value);
+        }
+        setDraft(String(final));
+        onChange(final);
+        onBlur();
+      }}
+      className="w-full h-8 px-2 rounded text-sm text-right tabular-nums font-semibold bg-transparent placeholder:text-ink-400 placeholder:italic placeholder:font-normal focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
     />
   );
 }

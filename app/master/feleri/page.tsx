@@ -7,6 +7,7 @@ import {
   FileBox,
   Package,
   TriangleAlert,
+  History,
 } from "lucide-react";
 import { isMasterAuthed } from "@/lib/auth";
 import { createSupabaseServer } from "@/lib/supabase";
@@ -77,7 +78,7 @@ export default async function FeleriDashboardPage() {
           </p>
         </section>
 
-        <section className="grid sm:grid-cols-3 gap-4">
+        <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <NavTile
             href="/master/feleri/artikli"
             title="Artikli"
@@ -98,6 +99,14 @@ export default async function FeleriDashboardPage() {
             count={d.feleri_count}
             description="Lista defekata iz radnji"
             icon={<TriangleAlert className="w-6 h-6" />}
+          />
+          <NavTile
+            href="/master/feleri/istorija"
+            title="Istorija"
+            count={0}
+            description="Svi artikli ikada feler — po proizvođaču"
+            icon={<History className="w-6 h-6" />}
+            hideCount
           />
         </section>
 
@@ -223,12 +232,14 @@ function NavTile({
   count,
   description,
   icon,
+  hideCount = false,
 }: {
   href: string;
   title: string;
   count: number;
   description: string;
   icon: React.ReactNode;
+  hideCount?: boolean;
 }) {
   return (
     <Link
@@ -244,8 +255,18 @@ function NavTile({
           className="text-ink-300 group-hover:text-ink-900 group-hover:translate-x-1 transition mt-1"
         />
       </div>
-      <div className="text-3xl font-bold text-ink-900 tabular-nums">{count}</div>
-      <div className="text-sm font-semibold text-ink-700 mt-0.5">{title}</div>
+      {!hideCount && (
+        <div className="text-3xl font-bold text-ink-900 tabular-nums">
+          {count}
+        </div>
+      )}
+      <div
+        className={`${
+          hideCount ? "text-2xl" : "text-sm"
+        } font-semibold text-ink-700 ${hideCount ? "mt-1" : "mt-0.5"}`}
+      >
+        {title}
+      </div>
       <div className="text-xs text-ink-500 mt-0.5">{description}</div>
     </Link>
   );

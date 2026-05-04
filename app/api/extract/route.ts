@@ -29,6 +29,9 @@ export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const formData = await req.formData();
   const files = formData.getAll("images") as File[];
+  const userInstructions = (
+    formData.get("instructions") as string | null
+  )?.trim() || "";
 
   if (!files.length) {
     return NextResponse.json(
@@ -77,7 +80,11 @@ Vrati SAMO JSON, bez objašnjenja:
   "articles": [
     {"model": "...", "tip": "...", "boja": "...", "kolicina": 0, "usd": 0, "rvel": 0}
   ]
-}`,
+}${
+                userInstructions
+                  ? `\n\nDODATNE INSTRUKCIJE OD KORISNIKA (poštuj ih čak i ako se tehnički razlikuju od standardnog formata):\n${userInstructions}`
+                  : ""
+              }`,
             },
           ],
         },

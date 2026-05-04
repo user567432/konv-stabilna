@@ -14,6 +14,7 @@ import {
 } from "@/lib/auth";
 import { STORE_LABELS_SHORT } from "@/lib/format";
 import LogoutButton from "@/app/unos/LogoutButton";
+import LogikUputstvoFAB from "@/components/LogikUputstvoFAB";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,7 @@ export default async function TimHomePage() {
           {STORE_LABELS_SHORT[store] ?? store}
         </footer>
       </div>
+      <LogikUputstvoFAB />
     </main>
   );
 }

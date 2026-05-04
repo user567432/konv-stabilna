@@ -87,6 +87,7 @@ export default function UploadClient() {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string>("");
   const [err, setErr] = useState<string | null>(null);
+  const [instructions, setInstructions] = useState<string>("");
 
   function pickFiles() {
     inputRef.current?.click();
@@ -125,6 +126,9 @@ export default function UploadClient() {
       setStage("Šaljem AI-u…");
       const fd = new FormData();
       allImages.forEach((f) => fd.append("images", f));
+      if (instructions.trim()) {
+        fd.append("instructions", instructions.trim());
+      }
       const res = await fetch("/api/extract", {
         method: "POST",
         body: fd,
@@ -181,6 +185,25 @@ export default function UploadClient() {
           </div>
         </button>
       </section>
+
+      {files.length > 0 && (
+        <section className="card-soft bg-amber-50/40 border-amber-100">
+          <label className="text-xs uppercase tracking-wider font-bold text-amber-900 mb-2 block">
+            Posebne instrukcije za AI (opciono)
+          </label>
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            rows={3}
+            disabled={busy}
+            placeholder={`Npr.\n• "Cene su u RSD a ne USD, prebaci sve u USD koristeći 117"\n• "Ignoriši kolonu PDV"\n• "Ovaj dobavljač piše kod kao prefiks od 4 cifre — to je 'sifra', a ne 'model'"`}
+            className="w-full text-sm rounded-lg border border-amber-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 leading-relaxed disabled:opacity-50"
+          />
+          <p className="text-[11px] text-amber-800 mt-1.5">
+            AI će poštovati ove instrukcije pri parsiranju slika.
+          </p>
+        </section>
+      )}
 
       {files.length > 0 && (
         <section className="card-soft">

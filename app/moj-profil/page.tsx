@@ -10,6 +10,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import LogoutButton from "./LogoutButton";
+import PushSetup from "@/components/PushSetup";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,7 @@ export default async function MojProfilPage() {
       </header>
 
       <div className="max-w-2xl mx-auto px-5 md:px-8 py-10 space-y-6">
+        <PushSetup />
         <section>
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
             Zdravo,{" "}
